@@ -1,0 +1,12 @@
+{
+    "scripts": {
+        "postinstall": "patch-package"
+    },
+    "devDependencies": {
+        "@graphql-codegen/cli": "^2.3.0",
+        "@graphql-codegen/schema-ast": "^2.4.0",
+        "graphql": "^16.0.1",
+        "patch-package": "^6.4.7",
+        "postinstall-postinstall": "^2.1.0"
+    }
+}

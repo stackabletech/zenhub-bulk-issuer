@@ -1,0 +1,19 @@
+= zenhub-bulk-issuer
+
+Bulk-creates ZenHub issues to all repositories in a workspace, optionally assigning them to sprints and/or epics.
+
+== Usage
+
+`cargo run -- --help`
+
+== API schema
+
+We use ZenHub's private API, since their public API (https://github.com/ZenHubIO/API) is missing a lot of resources
+(especially, sprints) and bulk operations.
+
+To update the schema:
+
+1. Put your authn token into `zenhub-schema-fetcher/codegen.yml` (DO NOT COMMIT THIS)
+2. Run `code zenhub-schema-fetcher && yarn install && yarn graphql-code-generator`
+
+We need to patch graphql to reduce the introspection query depth, since we'd otherwise be hitting ZenHub's depth cap.

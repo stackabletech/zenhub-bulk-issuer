@@ -1,0 +1,52 @@
+query ZenhubStateQuery($workspace: ID!) {
+  workspace(id: $workspace) {
+    repositoriesConnection {
+      nodes {
+        id
+        name
+        ownerName
+      }
+    }
+    
+    sprints {
+      nodes {
+        id
+        name
+      }
+    }
+    
+    epics {
+      nodes {
+        id
+        issue {
+          number
+          repository {
+            name
+            ownerName
+          }
+        }
+      }
+    }
+  }
+}
+
+mutation ZenhubCreateIssue($input: CreateIssueInput!) {
+  createIssue(input: $input) {
+    issue {
+      id
+      number
+    }
+  }
+}
+
+mutation ZenhubAddIssuesToEpics($issueIds: [ID!]!, $epicIds: [ID!]!) {
+  addIssuesToEpics(input: {epicIds: $epicIds, issueIds: $issueIds}) {
+    clientMutationId
+  }
+}
+
+mutation ZenhubAddIssuesToSprints($issueIds: [ID!]!, $sprintIds: [ID!]!) {
+  addIssuesToSprints(input: {sprintIds: $sprintIds, issueIds: $issueIds}) {
+    clientMutationId
+  }
+}
