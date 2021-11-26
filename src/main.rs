@@ -48,6 +48,10 @@ struct Opts {
     /// sent to https://api.zenhub.com/v1/graphql?query=trackEvent.
     #[structopt(long, env = "ZENHUB_TOKEN")]
     zenhub_token: String,
+
+    /// Do not actually create issues
+    #[structopt(long)]
+    dry_run: bool,
 }
 
 #[derive(GraphQLQuery)]
@@ -138,6 +142,18 @@ async fn main() -> anyhow::Result<()> {
             continue;
         }
 
+        tracing::info!(
+            repository = repo_ref.as_str(),
+            "Creating issue in repository"
+        );
+        if opts.dry_run {
+            tracing::info!(
+                repository = repo_ref.as_str(),
+                "Would create issue in repository, but skipping due to --dry-run flag"
+            );
+            continue;
+        }
+
         match create_issue(&reqwest, &repo, &opts.title, &body, &opts.labels).await {
             Ok(issue) => {
                 tracing::info!(
@@ -155,7 +171,9 @@ async fn main() -> anyhow::Result<()> {
             }
         }
     }
-    tag_issues(&reqwest, issue_ids, epic_ids, sprint_ids).await?;
+    tag_issues(&reqwest, issue_ids, epic_ids, sprint_ids)
+        .await
+        .context("error tagging issues")?;
     Ok(())
 }
 
@@ -245,6 +263,9 @@ async fn tag_issues(
     epic_ids: Vec<String>,
     sprint_ids: Vec<String>,
 ) -> Result<(), anyhow::Error> {
+    if issue_ids.is_empty() {
+        return Ok(());
+    }
     if !epic_ids.is_empty() {
         graphql_client::reqwest::post_graphql::<ZenhubAddIssuesToEpics, _>(
             reqwest,
@@ -254,7 +275,8 @@ async fn tag_issues(
                 epic_ids,
             },
         )
-        .await?
+        .await
+        .context("failed to submit epic tags")?
         .data
         .context("no response adding issues to epics")?;
     }
@@ -267,7 +289,8 @@ async fn tag_issues(
                 sprint_ids,
             },
         )
-        .await?
+        .await
+        .context("failed to submit sprint tags")?
         .data
         .context("no response adding issues to sprints")?;
     }
