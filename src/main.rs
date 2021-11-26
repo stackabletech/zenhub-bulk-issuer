@@ -1,11 +1,11 @@
-use std::io::Read;
+use std::{io::Read, path::Path};
 
 use anyhow::Context;
 use graphql_client::GraphQLQuery;
 use reqwest::header::{HeaderMap, HeaderValue};
 use structopt::StructOpt;
 use tempfile::NamedTempFile;
-use tokio::process::Command;
+use tokio::{fs::File, io::AsyncReadExt, process::Command};
 
 const ZENHUB_API: &str = "https://api.zenhub.com/v1/graphql";
 
@@ -81,8 +81,15 @@ async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt().init();
     let opts = Opts::from_args();
     let body = match opts.body {
-        Some(body) => body,
-        None => open_in_editor().await?,
+        Some(body) => match safe_split_str_at(&body, 1) {
+            ("@", path) => read_file_to_str(path)
+                .await
+                .with_context(|| format!("failed to load body from {}", path))?,
+            _ => body,
+        },
+        None => open_in_editor()
+            .await
+            .context("failed to set issue body in editor")?,
     };
     let zenhub_headers = {
         let mut map = HeaderMap::new();
@@ -273,4 +280,20 @@ async fn open_in_editor() -> Result<String, anyhow::Error> {
     file.read_to_string(&mut buf)
         .context("failed to read editor tempfile")?;
     Ok(buf)
+}
+
+async fn read_file_to_str(path: impl AsRef<Path>) -> Result<String, anyhow::Error> {
+    let mut buf = String::new();
+    File::open(path).await?.read_to_string(&mut buf).await?;
+    Ok(buf)
+}
+
+fn safe_split_str_at(full: &str, mut mid: usize) -> (&str, &str) {
+    // Clamp to length
+    mid = mid.min(full.len());
+    // Round down if not a char boundary
+    while mid != 0 && !full.is_char_boundary(mid) {
+        mid -= 1;
+    }
+    full.split_at(mid.min(full.len()))
 }
