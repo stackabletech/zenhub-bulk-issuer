@@ -11,6 +11,7 @@ graphql_client = { version = "0.10.0", features = ["reqwest"] }
 reqwest = "0.11.6"
 serde = "1.0.130"
 structopt = "0.3.25"
+tempfile = "3.2.0"
 tokio = { version = "1.14.0", features = ["full"] }
 tracing = "0.1.29"
 tracing-subscriber = "0.3.2"

@@ -1,7 +1,11 @@
+use std::io::Read;
+
 use anyhow::Context;
 use graphql_client::GraphQLQuery;
 use reqwest::header::{HeaderMap, HeaderValue};
 use structopt::StructOpt;
+use tempfile::NamedTempFile;
+use tokio::process::Command;
 
 const ZENHUB_API: &str = "https://api.zenhub.com/v1/graphql";
 
@@ -16,8 +20,10 @@ struct Opts {
     #[structopt(long)]
     title: String,
     /// The body of the created issues
+    ///
+    /// If this is not specified then your default editor (as set in $VISUAL or $EDITOR) will be opened
     #[structopt(long)]
-    body: String,
+    body: Option<String>,
     /// The labels to be added to the created issues
     #[structopt(long = "label")]
     labels: Vec<String>,
@@ -74,6 +80,10 @@ struct ZenhubAddIssuesToSprints;
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt().init();
     let opts = Opts::from_args();
+    let body = match opts.body {
+        Some(body) => body,
+        None => open_in_editor().await?,
+    };
     let zenhub_headers = {
         let mut map = HeaderMap::new();
         map.insert(
@@ -106,7 +116,7 @@ async fn main() -> anyhow::Result<()> {
         .into_iter()
         .flat_map(|repo| repo.nodes)
     {
-        match create_issue(&reqwest, &repo, &opts.title, &opts.body, &opts.labels).await {
+        match create_issue(&reqwest, &repo, &opts.title, &body, &opts.labels).await {
             Ok(issue) => {
                 tracing::info!(
                     issue = format_args!("{}/{}#{}", repo.owner_name, repo.name, issue.number),
@@ -240,4 +250,27 @@ async fn tag_issues(
         .context("no response adding issues to sprints")?;
     }
     Ok(())
+}
+
+async fn open_in_editor() -> Result<String, anyhow::Error> {
+    let editor = std::env::var_os("VISUAL")
+        .or_else(|| std::env::var_os("EDITOR"))
+        .context("no default editor could be found, please set $VISUAL or $EDITOR to your preferred text editor")?;
+    let mut file = NamedTempFile::new().context("failed to create temp file for editor")?;
+    tracing::info!(
+        ?editor,
+        path = ?file.path(),
+        "Launching editor, waiting for it to finish..."
+    );
+    Command::new(editor)
+        .arg(file.path())
+        .spawn()
+        .context("failed to launch editor")?
+        .wait()
+        .await
+        .context("editor failed")?;
+    let mut buf = String::new();
+    file.read_to_string(&mut buf)
+        .context("failed to read editor tempfile")?;
+    Ok(buf)
 }
