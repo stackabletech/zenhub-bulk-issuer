@@ -7,6 +7,13 @@ query ZenhubStateQuery($workspace: ID!) {
         ownerName
       }
     }
+
+    pipelinesConnection {
+      nodes {
+        id
+        name
+      }
+    }
     
     sprints {
       nodes {
@@ -36,6 +43,12 @@ mutation ZenhubCreateIssue($input: CreateIssueInput!) {
       id
       number
     }
+  }
+}
+
+mutation ZenhubMoveIssueToPipeline($issueId: ID!, $pipelineId: ID!) {
+  moveIssue(input: {pipelineId: $pipelineId, issueId: $issueId}) {
+    clientMutationId
   }
 }
 

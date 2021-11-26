@@ -37,6 +37,9 @@ struct Opts {
     /// The epics that should be added to the created issues, formatted as owner/repo#123
     #[structopt(long = "epic")]
     epics: Vec<String>,
+    /// Name of the pipeline that the issues should be created in (if not the default)
+    #[structopt(long)]
+    pipeline: Option<String>,
 
     /// Filter for repositories to be included, matching against owner/name
     #[structopt(long, default_value = ".*")]
@@ -69,6 +72,14 @@ struct ZenhubStateQuery;
     response_derives = "Debug"
 )]
 struct ZenhubCreateIssue;
+
+#[derive(GraphQLQuery)]
+#[graphql(
+    schema_path = "zenhub-schema-fetcher/schema.graphql",
+    query_path = "zenhub-queries.graphql",
+    response_derives = "Debug"
+)]
+struct ZenhubMoveIssueToPipeline;
 
 #[derive(GraphQLQuery)]
 #[graphql(
@@ -112,7 +123,7 @@ async fn main() -> anyhow::Result<()> {
     let reqwest = reqwest::Client::builder()
         .default_headers(zenhub_headers)
         .build()?;
-    let workspace = graphql_client::reqwest::post_graphql::<ZenhubStateQuery, _>(
+    let workspace_res = graphql_client::reqwest::post_graphql::<ZenhubStateQuery, _>(
         &reqwest,
         ZENHUB_API,
         zenhub_state_query::Variables {
@@ -120,13 +131,30 @@ async fn main() -> anyhow::Result<()> {
         },
     )
     .await
-    .context("failed to retrieve current zenhub state")?
-    .data
-    .context("no response for zenhub state query (is your zenhub token valid?)")?
-    .workspace
-    .context("no workspace found")?;
+    .context("failed to retrieve current zenhub state")?;
+    if let Some(errors) = workspace_res.errors {
+        if !errors.is_empty() {
+            return Err(anyhow::Error::msg(
+                errors
+                    .into_iter()
+                    .map(|err| err.message)
+                    .collect::<Vec<_>>()
+                    .join("; "),
+            )
+            .context("errors returned from zenhub state query"));
+        }
+    }
+    let workspace = workspace_res
+        .data
+        .context("no response for zenhub state query (is your zenhub token valid?)")?
+        .workspace
+        .context("no workspace found")?;
     let sprint_ids = resolve_sprint_ids(&opts.sprints, &workspace)?;
     let epic_ids = resolve_epic_ids(&opts.epics, &workspace)?;
+    let pipeline_id = opts
+        .pipeline
+        .map(|pipeline_name| resolve_pipeline_id(&pipeline_name, &workspace))
+        .transpose()?;
     let mut issue_ids = Vec::new();
     for repo in workspace
         .repositories_connection
@@ -154,7 +182,16 @@ async fn main() -> anyhow::Result<()> {
             continue;
         }
 
-        match create_issue(&reqwest, &repo, &opts.title, &body, &opts.labels).await {
+        match create_issue(
+            &reqwest,
+            &repo,
+            &opts.title,
+            &body,
+            &opts.labels,
+            pipeline_id.as_deref(),
+        )
+        .await
+        {
             Ok(issue) => {
                 tracing::info!(
                     issue = format_args!("{}/{}#{}", repo.owner_name, repo.name, issue.number),
@@ -225,36 +262,65 @@ fn resolve_epic_ids(
         .collect()
 }
 
+fn resolve_pipeline_id(
+    pipeline_name: &str,
+    workspace: &zenhub_state_query::ZenhubStateQueryWorkspace,
+) -> Result<String, anyhow::Error> {
+    Ok(workspace
+        .pipelines_connection
+        .nodes
+        .iter()
+        .find(|pipeline_candidate| pipeline_candidate.name == pipeline_name)
+        .with_context(|| format!("pipeline named {:?} could not be found", pipeline_name))?
+        .name
+        .clone())
+}
+
 async fn create_issue(
     reqwest: &reqwest::Client,
     repo: &zenhub_state_query::ZenhubStateQueryWorkspaceRepositoriesConnectionNodes,
     title: &str,
     body: &str,
     labels: &[String],
+    pipeline_id: Option<&str>,
 ) -> anyhow::Result<zenhub_create_issue::ZenhubCreateIssueCreateIssueIssue> {
-    Ok(
-        graphql_client::reqwest::post_graphql::<ZenhubCreateIssue, _>(
+    let issue = graphql_client::reqwest::post_graphql::<ZenhubCreateIssue, _>(
+        reqwest,
+        ZENHUB_API,
+        zenhub_create_issue::Variables {
+            input: zenhub_create_issue::CreateIssueInput {
+                title: title.to_string(),
+                body: Some(body.to_string()),
+                assignees: None,
+                clientMutationId: None,
+                labels: Some(labels.to_vec()),
+                milestone: None,
+                repositoryId: repo.id.clone(),
+            },
+        },
+    )
+    .await
+    .context("error creating issue")?
+    .data
+    .context("no response creating issue")?
+    .create_issue
+    .context("no metadata for created issue")?
+    .issue;
+    if let Some(pipeline_id) = pipeline_id {
+        graphql_client::reqwest::post_graphql::<ZenhubMoveIssueToPipeline, _>(
             reqwest,
             ZENHUB_API,
-            zenhub_create_issue::Variables {
-                input: zenhub_create_issue::CreateIssueInput {
-                    title: title.to_string(),
-                    body: Some(body.to_string()),
-                    assignees: None,
-                    clientMutationId: None,
-                    labels: Some(labels.to_vec()),
-                    milestone: None,
-                    repositoryId: repo.id.clone(),
-                },
+            zenhub_move_issue_to_pipeline::Variables {
+                issue_id: issue.id.clone(),
+                pipeline_id: pipeline_id.to_string(),
             },
         )
-        .await?
+        .await
+        .context("error moving issue to pipeline")?
         .data
-        .context("no response creating issue")?
-        .create_issue
-        .context("no metadata for created issue")?
-        .issue,
-    )
+        .context("no response moving issue to pipeline")?;
+    }
+    Ok(issue)
 }
 
 async fn tag_issues(
