@@ -21,7 +21,8 @@ struct Opts {
     title: String,
     /// The body of the created issues
     ///
-    /// If this is not specified then your default editor (as set in $VISUAL or $EDITOR) will be opened
+    /// If this is not specified then your default editor (as set in $VISUAL or $EDITOR) will be opened.
+    /// This can also be loaded from a file, by specifying @path (which would load ./path as your body).
     #[structopt(long)]
     body: Option<String>,
     /// The labels to be added to the created issues
