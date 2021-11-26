@@ -272,7 +272,7 @@ fn resolve_pipeline_id(
         .iter()
         .find(|pipeline_candidate| pipeline_candidate.name == pipeline_name)
         .with_context(|| format!("pipeline named {:?} could not be found", pipeline_name))?
-        .name
+        .id
         .clone())
 }
 
