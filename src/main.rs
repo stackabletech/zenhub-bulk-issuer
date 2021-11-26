@@ -2,6 +2,7 @@ use std::{io::Read, path::Path};
 
 use anyhow::Context;
 use graphql_client::GraphQLQuery;
+use regex::Regex;
 use reqwest::header::{HeaderMap, HeaderValue};
 use structopt::StructOpt;
 use tempfile::NamedTempFile;
@@ -36,6 +37,10 @@ struct Opts {
     /// The epics that should be added to the created issues, formatted as owner/repo#123
     #[structopt(long = "epic")]
     epics: Vec<String>,
+
+    /// Filter for repositories to be included, matching against owner/name
+    #[structopt(long, default_value = ".*")]
+    repository_regex: Regex,
 
     /// The authentication token to be used for authenticating to the ZenHub API
     ///
@@ -124,6 +129,15 @@ async fn main() -> anyhow::Result<()> {
         .into_iter()
         .flat_map(|repo| repo.nodes)
     {
+        let repo_ref = format!("{}/{}", repo.owner_name, repo.name);
+        if !opts.repository_regex.is_match(&repo_ref) {
+            tracing::info!(
+                repository = repo_ref.as_str(),
+                "Skipping repository since it did not match the specified filter"
+            );
+            continue;
+        }
+
         match create_issue(&reqwest, &repo, &opts.title, &body, &opts.labels).await {
             Ok(issue) => {
                 tracing::info!(
@@ -134,7 +148,7 @@ async fn main() -> anyhow::Result<()> {
             }
             Err(err) => {
                 tracing::warn!(
-                    repository = format_args!("{}/{}", repo.owner_name, repo.name),
+                    repository = repo_ref.as_str(),
                     error = err.as_ref() as &(dyn std::error::Error + 'static),
                     "Failed to create issue in repo, skipping"
                 )
