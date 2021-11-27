@@ -201,7 +201,7 @@ async fn main() -> anyhow::Result<()> {
 fn resolve_sprint_ids(
     sprint_names: &[String],
     workspace: &zenhub_state_query::ZenhubStateQueryWorkspace,
-) -> Result<Vec<String>, anyhow::Error> {
+) -> anyhow::Result<Vec<String>> {
     sprint_names
         .iter()
         .map(|sprint_name| {
@@ -219,7 +219,7 @@ fn resolve_sprint_ids(
 fn resolve_epic_ids(
     epic_refs: &[String],
     workspace: &zenhub_state_query::ZenhubStateQueryWorkspace,
-) -> Result<Vec<String>, anyhow::Error> {
+) -> anyhow::Result<Vec<String>> {
     epic_refs
         .iter()
         .map(|epic_ref| {
@@ -249,7 +249,7 @@ fn resolve_epic_ids(
 fn resolve_pipeline_id(
     pipeline_name: &str,
     workspace: &zenhub_state_query::ZenhubStateQueryWorkspace,
-) -> Result<String, anyhow::Error> {
+) -> anyhow::Result<String> {
     Ok(workspace
         .pipelines_connection
         .nodes
@@ -306,7 +306,7 @@ async fn tag_issues(
     issue_ids: Vec<String>,
     epic_ids: Vec<String>,
     sprint_ids: Vec<String>,
-) -> Result<(), anyhow::Error> {
+) -> anyhow::Result<()> {
     if issue_ids.is_empty() {
         return Ok(());
     }
@@ -357,7 +357,7 @@ async fn zenhub_query<T: GraphQLQuery>(
     response.data.context("graphql query returned no data")
 }
 
-async fn open_in_editor() -> Result<String, anyhow::Error> {
+async fn open_in_editor() -> anyhow::Result<String> {
     let editor = std::env::var_os("VISUAL")
         .or_else(|| std::env::var_os("EDITOR"))
         .context("no default editor could be found, please set $VISUAL or $EDITOR to your preferred text editor")?;
@@ -380,7 +380,7 @@ async fn open_in_editor() -> Result<String, anyhow::Error> {
     Ok(buf)
 }
 
-async fn read_file_to_str(path: impl AsRef<Path>) -> Result<String, anyhow::Error> {
+async fn read_file_to_str(path: impl AsRef<Path>) -> anyhow::Result<String> {
     let mut buf = String::new();
     File::open(path).await?.read_to_string(&mut buf).await?;
     Ok(buf)
