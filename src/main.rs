@@ -123,32 +123,16 @@ async fn main() -> anyhow::Result<()> {
     let reqwest = reqwest::Client::builder()
         .default_headers(zenhub_headers)
         .build()?;
-    let workspace_res = graphql_client::reqwest::post_graphql::<ZenhubStateQuery, _>(
+    let workspace = zenhub_query::<ZenhubStateQuery>(
         &reqwest,
-        ZENHUB_API,
         zenhub_state_query::Variables {
             workspace: opts.workspace,
         },
     )
     .await
-    .context("failed to retrieve current zenhub state")?;
-    if let Some(errors) = workspace_res.errors {
-        if !errors.is_empty() {
-            return Err(anyhow::Error::msg(
-                errors
-                    .into_iter()
-                    .map(|err| err.message)
-                    .collect::<Vec<_>>()
-                    .join("; "),
-            )
-            .context("errors returned from zenhub state query"));
-        }
-    }
-    let workspace = workspace_res
-        .data
-        .context("no response for zenhub state query (is your zenhub token valid?)")?
-        .workspace
-        .context("no workspace found")?;
+    .context("failed to retrieve current zenhub state")?
+    .workspace
+    .context("no workspace found")?;
     let sprint_ids = resolve_sprint_ids(&opts.sprints, &workspace)?;
     let epic_ids = resolve_epic_ids(&opts.epics, &workspace)?;
     let pipeline_id = opts
@@ -284,9 +268,8 @@ async fn create_issue(
     labels: &[String],
     pipeline_id: Option<&str>,
 ) -> anyhow::Result<zenhub_create_issue::ZenhubCreateIssueCreateIssueIssue> {
-    let issue = graphql_client::reqwest::post_graphql::<ZenhubCreateIssue, _>(
+    let issue = zenhub_query::<ZenhubCreateIssue>(
         reqwest,
-        ZENHUB_API,
         zenhub_create_issue::Variables {
             input: zenhub_create_issue::CreateIssueInput {
                 title: title.to_string(),
@@ -301,24 +284,19 @@ async fn create_issue(
     )
     .await
     .context("error creating issue")?
-    .data
-    .context("no response creating issue")?
     .create_issue
     .context("no metadata for created issue")?
     .issue;
     if let Some(pipeline_id) = pipeline_id {
-        graphql_client::reqwest::post_graphql::<ZenhubMoveIssueToPipeline, _>(
+        zenhub_query::<ZenhubMoveIssueToPipeline>(
             reqwest,
-            ZENHUB_API,
             zenhub_move_issue_to_pipeline::Variables {
                 issue_id: issue.id.clone(),
                 pipeline_id: pipeline_id.to_string(),
             },
         )
         .await
-        .context("error moving issue to pipeline")?
-        .data
-        .context("no response moving issue to pipeline")?;
+        .context("error moving issue to pipeline")?;
     }
     Ok(issue)
 }
@@ -333,34 +311,50 @@ async fn tag_issues(
         return Ok(());
     }
     if !epic_ids.is_empty() {
-        graphql_client::reqwest::post_graphql::<ZenhubAddIssuesToEpics, _>(
+        zenhub_query::<ZenhubAddIssuesToEpics>(
             reqwest,
-            ZENHUB_API,
             zenhub_add_issues_to_epics::Variables {
                 issue_ids: issue_ids.clone(),
                 epic_ids,
             },
         )
         .await
-        .context("failed to submit epic tags")?
-        .data
-        .context("no response adding issues to epics")?;
+        .context("failed to submit epic tags")?;
     }
     if !sprint_ids.is_empty() {
-        graphql_client::reqwest::post_graphql::<ZenhubAddIssuesToSprints, _>(
+        zenhub_query::<ZenhubAddIssuesToSprints>(
             reqwest,
-            ZENHUB_API,
             zenhub_add_issues_to_sprints::Variables {
                 issue_ids,
                 sprint_ids,
             },
         )
         .await
-        .context("failed to submit sprint tags")?
-        .data
-        .context("no response adding issues to sprints")?;
+        .context("failed to submit sprint tags")?;
     }
     Ok(())
+}
+
+async fn zenhub_query<T: GraphQLQuery>(
+    reqwest: &reqwest::Client,
+    vars: T::Variables,
+) -> anyhow::Result<T::ResponseData> {
+    let response = graphql_client::reqwest::post_graphql::<T, _>(reqwest, ZENHUB_API, vars)
+        .await
+        .context("graphql query failed")?;
+    if let Some(errors) = response.errors {
+        if !errors.is_empty() {
+            return Err(anyhow::Error::msg(
+                errors
+                    .into_iter()
+                    .map(|err| err.message)
+                    .collect::<Vec<_>>()
+                    .join("\n"),
+            )
+            .context("graphql query returned errors"));
+        }
+    }
+    response.data.context("graphql query returned no data")
 }
 
 async fn open_in_editor() -> Result<String, anyhow::Error> {
