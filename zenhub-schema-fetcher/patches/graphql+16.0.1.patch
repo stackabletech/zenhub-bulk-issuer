@@ -1,0 +1,19 @@
+diff --git a/node_modules/graphql/utilities/getIntrospectionQuery.js b/node_modules/graphql/utilities/getIntrospectionQuery.js
+index d37e2c5..e9cc63f 100644
+--- a/node_modules/graphql/utilities/getIntrospectionQuery.js
++++ b/node_modules/graphql/utilities/getIntrospectionQuery.js
+@@ -112,14 +112,6 @@ function getIntrospectionQuery(options) {
+               ofType {
+                 kind
+                 name
+-                ofType {
+-                  kind
+-                  name
+-                  ofType {
+-                    kind
+-                    name
+-                  }
+-                }
+               }
+             }
+           }
