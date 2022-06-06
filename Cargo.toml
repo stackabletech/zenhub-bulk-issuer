@@ -8,7 +8,7 @@ edition = "2021"
 [dependencies]
 anyhow = "1.0.48"
 graphql_client = { version = "0.10.0", features = ["reqwest"] }
-regex = "1.5.4"
+regex = "1.5.5"
 reqwest = "0.11.6"
 serde = "1.0.130"
 structopt = "0.3.25"
